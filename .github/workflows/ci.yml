@@ -21,6 +21,6 @@ jobs:
         with:
           persist-credentials: false
       - name: Check shell syntax
-        run: find .github/actions -name '*.sh' -exec bash -n {} +
+        run: find .github/actions -name '*.sh' -exec bash -n {} \;
       - name: Verify release and publication behavior
         run: python3 -m unittest discover -s tests -v

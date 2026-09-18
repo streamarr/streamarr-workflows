@@ -178,6 +178,15 @@ class ImagePublicationTests(unittest.TestCase):
         self.assertNotIn(f'{IMAGE}:1.2.3-SNAPSHOT', self.images())
         self.assertFalse((self.root / 'image.json').exists())
 
+    def test_shouldPreserveRegistryFailureWhenInspectionAlsoReturnsValidPlatforms(self):
+        self.registry_state(inspectExit=23)
+
+        result = self.publish()
+
+        self.assertEqual(result.returncode, 23, result.stderr)
+        self.assertNotIn(f'{IMAGE}:1.2.3-SNAPSHOT', self.images())
+        self.assertFalse((self.root / 'image.json').exists())
+
     def test_shouldUseVerifiedDigestWhenCreatedTagIsReplaced(self):
         self.registry_state(replaceCreatedTag=True)
 

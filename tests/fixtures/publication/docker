@@ -25,3 +25,5 @@ elif args[:4] == ['buildx', 'imagetools', 'inspect', '--raw']:
 else:
     sys.exit('Unsupported Docker command: ' + repr(args))
 path.write_text(json.dumps(state))
+if args[:4] == ['buildx', 'imagetools', 'inspect', '--raw']:
+    sys.exit(state.get('inspectExit', 0))
