@@ -1,0 +1,23 @@
+name: Validate Maven release
+description: Verify the caller's checked-out release and expose its version and revision.
+inputs:
+  tag:
+    description: Published GitHub release tag.
+    required: true
+outputs:
+  version:
+    description: Stable Maven version.
+    value: ${{ steps.release.outputs.version }}
+  revision:
+    description: Validated release commit.
+    value: ${{ steps.release.outputs.revision }}
+runs:
+  using: composite
+  steps:
+    - name: Verify tagged Maven version
+      id: release
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        RELEASE_TAG: ${{ inputs.tag }}
+      run: bash "$GITHUB_ACTION_PATH/validate-release.sh"

@@ -1,0 +1,51 @@
+name: Maintain Maven releases
+description: Publish merged releases before preparing the next release pull request.
+inputs:
+  app-client-id:
+    description: Release GitHub App client ID.
+    required: true
+  app-private-key:
+    description: Release GitHub App PEM private key.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Mint release bot token
+      id: bot
+      uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+      with:
+        client-id: ${{ inputs.app-client-id }}
+        private-key: ${{ inputs.app-private-key }}
+        permission-contents: write
+        permission-pull-requests: write
+        permission-issues: write
+    - name: Verify repository auto-merge
+      shell: bash
+      env:
+        GH_TOKEN: ${{ steps.bot.outputs.token }}
+      run: bash "$GITHUB_ACTION_PATH/release-please.sh" auto-merge
+    - name: Publish merged releases
+      uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+      with:
+        token: ${{ steps.bot.outputs.token }}
+        target-branch: main
+        skip-github-pull-request: true
+    - name: Verify merged releases were processed
+      shell: bash
+      env:
+        GH_TOKEN: ${{ steps.bot.outputs.token }}
+      run: bash "$GITHUB_ACTION_PATH/release-please.sh" pending
+    - name: Maintain release PR
+      id: release_pr
+      uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+      with:
+        token: ${{ steps.bot.outputs.token }}
+        target-branch: main
+        skip-github-release: true
+    - name: Queue snapshot auto-merge
+      if: steps.release_pr.outputs.prs_created == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ steps.bot.outputs.token }}
+        RELEASE_PR: ${{ steps.release_pr.outputs.pr }}
+      run: bash "$GITHUB_ACTION_PATH/release-please.sh" snapshot

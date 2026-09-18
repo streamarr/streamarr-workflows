@@ -1,0 +1,29 @@
+#!/usr/bin/env python3
+import json
+import os
+from pathlib import Path
+import sys
+
+path = Path(os.environ['FAKE_REGISTRY'])
+state = json.loads(path.read_text())
+args = sys.argv[1:]
+if args[:3] == ['buildx', 'imagetools', 'create']:
+    tag_index = args.index('--tag')
+    tag = args[tag_index + 1]
+    manifests = []
+    for source in args[tag_index + 2:]:
+        manifests.extend(state['images'][source])
+    state['images'][tag] = manifests
+    if '--metadata-file' in args:
+        state['images'][os.environ['IMAGE_REPOSITORY'] + '@' + state['indexDigest']] = manifests
+        Path(args[args.index('--metadata-file') + 1]).write_text(json.dumps({
+            'containerimage.descriptor': {'digest': state['indexDigest']}}))
+        if state.get('replaceCreatedTag'):
+            state['images'][tag] = [{'digest': 'sha256:' + '9' * 64}]
+elif args[:4] == ['buildx', 'imagetools', 'inspect', '--raw']:
+    print(json.dumps({'manifests': state.get('indexOverride', state['images'][args[-1]])}))
+else:
+    sys.exit('Unsupported Docker command: ' + repr(args))
+path.write_text(json.dumps(state))
+if args[:4] == ['buildx', 'imagetools', 'inspect', '--raw']:
+    sys.exit(state.get('inspectExit', 0))

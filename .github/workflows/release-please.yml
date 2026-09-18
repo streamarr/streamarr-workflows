@@ -1,0 +1,22 @@
+name: Release Please
+
+on:
+  workflow_call:
+    secrets:
+      app-client-id:
+        required: true
+      app-private-key:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Maintain Maven releases
+    runs-on: ubuntu-latest
+    steps:
+      - uses: $/.github/actions/release-please
+        with:
+          app-client-id: ${{ secrets.app-client-id }}
+          app-private-key: ${{ secrets.app-private-key }}
