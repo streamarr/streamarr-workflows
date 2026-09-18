@@ -1,0 +1,14 @@
+#!/usr/bin/env python3
+import os
+import sys
+
+if os.environ.get('FAKE_GITHUB_FAILURE') == 'true':
+    sys.exit('GitHub unavailable')
+args = sys.argv[1:]
+repository = os.environ['GITHUB_REPOSITORY']
+if args == ['api', f'repos/{repository}/git/ref/heads/main', '--jq', '.object.sha']:
+    print(os.environ['FAKE_MAIN_REVISION'])
+elif args == ['api', f'repos/{repository}/releases/latest', '--jq', '.tag_name']:
+    print(os.environ['FAKE_LATEST_TAG'])
+else:
+    sys.exit('Unsupported GitHub command: ' + repr(args))

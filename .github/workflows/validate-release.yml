@@ -1,0 +1,44 @@
+name: Validate release
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Published release tag to retry. Leave empty for release events.
+        required: false
+        type: string
+        default: ''
+    outputs:
+      version:
+        description: Stable Maven version.
+        value: ${{ jobs.validate_release.outputs.version }}
+      revision:
+        description: Validated release commit.
+        value: ${{ jobs.validate_release.outputs.revision }}
+
+permissions:
+  contents: read
+
+jobs:
+  validate_release:
+    name: Validate release version and revision
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      revision: ${{ steps.release.outputs.revision }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.tag != '' && format('refs/tags/{0}', inputs.tag) || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          java-version: '25'
+          distribution: zulu
+          cache: maven
+      - name: Validate the checked-out release
+        id: release
+        uses: $/.github/actions/validate-release
+        with:
+          tag: ${{ inputs.tag || github.event.release.tag_name }}

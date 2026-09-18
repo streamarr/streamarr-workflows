@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+import json
+import os
+from pathlib import Path
+import sys
+import subprocess
+
+path = Path(os.environ['RELEASE_FIXTURE'])
+state = json.loads(path.read_text())
+arguments = sys.argv[1:]
+if state.get('unavailable'):
+    sys.exit('GitHub unavailable')
+def option(name):
+    return arguments[arguments.index(name) + 1] if name in arguments else None
+
+
+def output(value):
+    query = option('--jq') or '.'
+    print(subprocess.check_output(['jq', '-r', query], input=json.dumps(value), text=True).strip())
+
+
+repository = 'repos/' + os.environ['GITHUB_REPOSITORY']
+if arguments[:2] == ['api', repository]:
+    output(state)
+elif arguments[:1] == ['api'] and arguments[1].startswith(repository + '/releases/tags/'):
+    tag = arguments[1].rsplit('/', 1)[1]
+    if tag not in state['releases']:
+        sys.exit('Release not found')
+    output(state['releases'][tag])
+elif arguments[:2] == ['pr', 'list']:
+    if option('--repo') != os.environ['GITHUB_REPOSITORY']:
+        sys.exit('Unknown repository')
+    pulls = [pull for pull in state['pulls'] if pull['base'] == option('--base')
+             and pull['state'] == option('--state') and option('--label') in pull['labels']]
+    output(pulls)
+elif arguments[:1] == ['api'] and arguments[1].startswith(repository + '/pulls/'):
+    value = state['head']['sha']
+    if 'head_after_read' in state:
+        state['head']['sha'] = state.pop('head_after_read')
+        path.write_text(json.dumps(state))
+    output({'head': {'sha': value}})
+elif arguments[:2] == ['pr', 'merge']:
+    if option('--repo') != os.environ['GITHUB_REPOSITORY']:
+        sys.exit('Unknown repository')
+    if option('--match-head-commit') not in [None, state['head']['sha']]:
+        sys.exit('Pull request head changed')
+    state['autoMerge' if '--auto' in arguments else 'merged'] = {
+        'number': int(arguments[2]), 'head': state['head']['sha'],
+        'subject': option('--subject'), 'body': option('--body'),
+        'method': 'squash' if '--squash' in arguments else 'merge'}
+    path.write_text(json.dumps(state))
+else:
+    sys.exit('Unsupported GitHub fixture request: ' + repr(arguments))

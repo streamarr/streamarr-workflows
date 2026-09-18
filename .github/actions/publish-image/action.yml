@@ -1,0 +1,32 @@
+name: Publish verified image
+description: Assemble verified native digests and apply Streamarr image tags
+inputs:
+  image-repository:
+    description: Docker Hub repository matching the caller repository
+    required: true
+  source-revision:
+    description: Full revision recorded in both verified native image receipts
+    required: true
+  version:
+    description: Maven version of the verified images
+    required: true
+  publication-kind:
+    description: snapshot for main builds or release for stable releases
+    required: true
+outputs:
+  image:
+    description: Immutable multi-architecture image reference
+    value: ${{ steps.publish.outputs.image }}
+runs:
+  using: composite
+  steps:
+    - id: publish
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        IMAGE_REPOSITORY: ${{ inputs.image-repository }}
+        SOURCE_REVISION: ${{ inputs.source-revision }}
+        IMAGE_VERSION: ${{ inputs.version }}
+        PUBLICATION_KIND: ${{ inputs.publication-kind }}
+        GITHUB_EVENT_ACTION: ${{ github.event.action }}
+      run: bash "$ACTION_PATH/publish.sh"
