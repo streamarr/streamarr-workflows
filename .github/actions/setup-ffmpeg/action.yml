@@ -1,0 +1,25 @@
+name: Set up Streamarr FFmpeg
+description: Verify a pinned streamarr-ffmpeg release and put ffmpeg and ffprobe on the PATH.
+inputs:
+  release:
+    description: The streamarr-ffmpeg release tag, such as v8.1.3-2-streamarr.1.
+    required: true
+  sha256:
+    description: The SHA-256 checksum of the release archive for the runner's architecture.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Restore the release archive
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.tool_cache }}/streamarr-ffmpeg/archive
+        key: streamarr-ffmpeg-${{ inputs.release }}-${{ runner.os }}-${{ runner.arch }}-${{ inputs.sha256 }}
+    - name: Verify and install FFmpeg
+      shell: bash
+      env:
+        FFMPEG_RELEASE: ${{ inputs.release }}
+        FFMPEG_SHA256: ${{ inputs.sha256 }}
+        FFMPEG_ARCHIVE_DIRECTORY: ${{ runner.tool_cache }}/streamarr-ffmpeg/archive
+        FFMPEG_INSTALL_DIRECTORY: ${{ runner.tool_cache }}/streamarr-ffmpeg/install
+      run: bash "$GITHUB_ACTION_PATH/setup-ffmpeg.sh"

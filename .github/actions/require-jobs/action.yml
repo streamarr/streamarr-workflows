@@ -1,0 +1,19 @@
+name: Require jobs
+description: Fail unless every job the calling job needs succeeded.
+inputs:
+  jobs:
+    description: The calling job's needs context as JSON.
+    required: true
+  allowed-skips:
+    description: Needed jobs that may be skipped, separated by commas or spaces.
+    required: false
+    default: ''
+runs:
+  using: composite
+  steps:
+    - name: Require every needed job to succeed
+      shell: bash
+      env:
+        NEEDED_JOBS: ${{ inputs.jobs }}
+        ALLOWED_SKIPS: ${{ inputs.allowed-skips }}
+      run: bash "$GITHUB_ACTION_PATH/require-jobs.sh"
