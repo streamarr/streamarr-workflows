@@ -1,10 +1,11 @@
 # Streamarr Workflows
 
-Shared GitHub Actions workflows for Streamarr releases and image publication.
+Shared GitHub Actions workflows and actions for Streamarr CI, releases and image publication.
 
 Each application owns its build, tests, native image verification, and required `build` check.
 This repository owns Release Please orchestration, stable release validation, and publication
-of the verified multi-architecture image. Workflows require human review and merge.
+of the verified multi-architecture image. It also holds the actions that every repository's CI
+shares. Workflows require human review and merge.
 
 ## Workflows
 
@@ -23,6 +24,40 @@ Pin each cross-repository workflow call to its reviewed full commit SHA. Once a 
 released, add its version comment so Renovate can propose pin updates. Adopt those updates
 through human-reviewed PRs. Bundled actions use GitHub.com's `$/` references so they run from
 the same repository revision as the reusable workflow, while checkout obtains application code.
+
+## Actions
+
+| Action | Caller supplies | Result |
+| --- | --- | --- |
+| `require-jobs` | The calling job's `needs` context and the jobs that may be skipped | Fails unless every needed job succeeded |
+
+Pin each action to a full commit SHA, as for a workflow call.
+
+### Required `build` check
+
+Each repository requires one check, `build`. Make it the last job of the CI workflow:
+
+```yaml
+build:
+  name: build
+  needs: [static, unit, browser]
+  if: ${{ always() }}
+  runs-on: ubuntu-latest
+  timeout-minutes: 5
+  steps:
+    - uses: streamarr/streamarr-workflows/.github/actions/require-jobs@<full commit SHA>
+      with:
+        jobs: ${{ toJSON(needs) }}
+```
+
+- List every other job in `needs`.
+- Keep `if: always()`. GitHub skips a job when a job it needs did not succeed, and a skipped
+  required check counts as passing. With `always()` the job also runs after a needed job timed
+  out or the run was cancelled, and the check then fails.
+- Check out nothing and keep the time limit short. GitHub warns that an `always()` job that
+  fetches sources can hang.
+- `allowed-skips` lists the needed jobs that may be skipped, separated by commas or spaces. A
+  listed job passes when it succeeded or was skipped. Every other result fails the check.
 
 ## Image publication contract
 
