@@ -30,6 +30,7 @@ the same repository revision as the reusable workflow, while checkout obtains ap
 | Action | Caller supplies | Result |
 | --- | --- | --- |
 | `require-jobs` | The calling job's `needs` context and the jobs that may be skipped | Fails unless every needed job succeeded |
+| `setup-ffmpeg` | A streamarr-ffmpeg release tag and the SHA-256 checksum of its archive | `ffmpeg` and `ffprobe` on the `PATH` |
 
 Pin each action to a full commit SHA, as for a workflow call.
 
@@ -58,6 +59,22 @@ build:
   fetches sources can hang.
 - `allowed-skips` lists the needed jobs that may be skipped, separated by commas or spaces. A
   listed job passes when it succeeded or was skipped. Every other result fails the check.
+
+### FFmpeg
+
+`setup-ffmpeg` installs the FFmpeg build that the transcode worker ships, from a
+[streamarr-ffmpeg](https://github.com/streamarr/streamarr-ffmpeg/releases) release:
+
+```yaml
+- uses: streamarr/streamarr-workflows/.github/actions/setup-ffmpeg@<full commit SHA>
+  with:
+    release: v8.1.3-2-streamarr.1
+    sha256: <SHA-256 checksum of the archive for the runner's architecture>
+```
+
+Each release publishes a `.sha256` file beside its archive. The action keeps the archive in the
+Actions cache and verifies the checksum on every run, whether the archive came from the cache or
+from the release. It supports Linux runners on x64 and arm64.
 
 ## Image publication contract
 
