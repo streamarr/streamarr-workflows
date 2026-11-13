@@ -24,6 +24,11 @@ runs:
       env:
         GH_TOKEN: ${{ steps.bot.outputs.token }}
       run: bash "$GITHUB_ACTION_PATH/release-please.sh" auto-merge
+    - name: Adopt releases that an earlier run created
+      shell: bash
+      env:
+        GH_TOKEN: ${{ steps.bot.outputs.token }}
+      run: bash "$GITHUB_ACTION_PATH/release-please.sh" adopt
     - name: Publish merged releases
       uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
       with:

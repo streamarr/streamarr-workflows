@@ -34,6 +34,18 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertEqual(publish['skip-github-pull-request'], 'true')
         self.assertEqual(maintain['skip-github-release'], 'true')
 
+    def test_shouldAdoptCreatedReleasesBeforePublishingMergedReleases(self):
+        steps = release_steps()
+        names = list(steps)
+        adopt = steps['Adopt releases that an earlier run created']
+
+        self.assertLess(names.index('Mint release bot token'),
+                        names.index('Adopt releases that an earlier run created'))
+        self.assertLess(names.index('Adopt releases that an earlier run created'),
+                        names.index('Publish merged releases'))
+        self.assertEqual(adopt['run'], 'bash "$GITHUB_ACTION_PATH/release-please.sh" adopt')
+        self.assertEqual(adopt['GH_TOKEN'], '${{ steps.bot.outputs.token }}')
+
     def test_shouldAuthenticateAsReleaseAppWhenMaintainingReleases(self):
         steps = release_steps()
         token = steps['Mint release bot token']

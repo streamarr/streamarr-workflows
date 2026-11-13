@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import sys
 import subprocess
+from urllib.parse import unquote
 
 path = Path(os.environ['RELEASE_FIXTURE'])
 state = json.loads(path.read_text())
@@ -28,6 +29,30 @@ elif arguments[:1] == ['api'] and arguments[1].startswith(repository + '/release
     if release is None:
         sys.exit('Release not found')
     output(release)
+elif arguments[:1] == ['api'] and arguments[1] == repository + '/releases?per_page=100':
+    if '--paginate' not in arguments:
+        sys.exit('Releases beyond the first page were not requested')
+    output(state['releases'])
+elif arguments[:1] == ['api'] and arguments[1].startswith(repository + '/issues/'):
+    number, _, label = arguments[1].removeprefix(repository + '/issues/').partition('/labels')
+    labels = next(pull['labels'] for pull in state['pulls'] if pull['number'] == int(number))
+    if option('--method') == 'POST' and not label:
+        if state.get('label_addition_fails'):
+            sys.exit('Label addition failed')
+        field, _, added = option('-f').partition('=')
+        if field != 'labels[]':
+            sys.exit('Unsupported label field: ' + field)
+        if added not in labels:
+            labels.append(added)
+    elif option('--method') == 'DELETE' and label:
+        removed = unquote(label.removeprefix('/'))
+        if removed not in labels:
+            sys.exit('Label does not exist')
+        labels.remove(removed)
+    else:
+        sys.exit('Unsupported label request: ' + repr(arguments))
+    path.write_text(json.dumps(state))
+    output(labels)
 elif arguments[:2] == ['pr', 'list']:
     if option('--repo') != os.environ['GITHUB_REPOSITORY']:
         sys.exit('Unknown repository')
