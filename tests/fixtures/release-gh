@@ -55,6 +55,8 @@ elif arguments[:1] == ['api'] and arguments[1].startswith(repository + '/issues/
         if added not in labels:
             labels.append(added)
     elif option('--method') == 'DELETE' and label:
+        if state.get('label_removal_fails'):
+            sys.exit('Label removal failed')
         removed = unquote(label.removeprefix('/'))
         if removed not in labels:
             sys.exit('Label does not exist')
