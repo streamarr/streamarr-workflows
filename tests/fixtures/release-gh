@@ -2,8 +2,10 @@
 import json
 import os
 from pathlib import Path
+import re
 import sys
 import subprocess
+from urllib.parse import unquote
 
 path = Path(os.environ['RELEASE_FIXTURE'])
 state = json.loads(path.read_text())
@@ -12,6 +14,19 @@ if state.get('unavailable'):
     sys.exit('GitHub unavailable')
 def option(name):
     return arguments[arguments.index(name) + 1] if name in arguments else None
+
+
+def fields():
+    values = {}
+    for index, argument in enumerate(arguments):
+        if argument != '-f':
+            continue
+        name, _, value = arguments[index + 1].partition('=')
+        if name.endswith('[]'):
+            values.setdefault(name.removesuffix('[]'), []).append(value)
+        else:
+            values[name] = value
+    return values
 
 
 def output(value):
@@ -24,14 +39,80 @@ if arguments[:2] == ['api', repository]:
     output(state)
 elif arguments[:1] == ['api'] and arguments[1].startswith(repository + '/releases/tags/'):
     tag = arguments[1].rsplit('/', 1)[1]
-    if tag not in state['releases']:
+    release = next((release for release in state['releases'] if release['tag_name'] == tag), None)
+    if release is None:
         sys.exit('Release not found')
-    output(state['releases'][tag])
+    output(release)
+elif arguments[:1] == ['api'] and arguments[1] == repository + '/releases?per_page=100':
+    if '--paginate' not in arguments:
+        sys.exit('Releases beyond the first page were not requested')
+    if state.get('releases_unavailable'):
+        sys.exit('Releases unavailable')
+    output(state['releases'])
+elif arguments[:1] == ['api'] and arguments[1].startswith(repository + '/git/matching-refs/tags/'):
+    if state.get('tags_unavailable'):
+        sys.exit('Tags unavailable')
+    prefix = arguments[1].removeprefix(repository + '/git/matching-refs/tags/')
+    output([{'ref': 'refs/tags/' + name, 'object': target}
+            for name, target in state['tags'].items() if name.startswith(prefix)])
+elif arguments[:1] == ['api'] and arguments[1].startswith(repository + '/git/tags/'):
+    if state.get('tag_objects_unavailable'):
+        sys.exit('Tag objects unavailable')
+    output({'object': state['tag_objects'][arguments[1].rsplit('/', 1)[1]]})
+elif arguments[:1] == ['api'] and arguments[1].startswith(repository + '/issues/'):
+    number, _, label = arguments[1].removeprefix(repository + '/issues/').partition('/labels')
+    labels = next(pull['labels'] for pull in state['pulls'] if pull['number'] == int(number))
+    if option('--method') == 'POST' and not label:
+        if state.get('label_addition_fails'):
+            sys.exit('Label addition failed')
+        field, _, added = option('-f').partition('=')
+        if field != 'labels[]':
+            sys.exit('Unsupported label field: ' + field)
+        if added not in labels:
+            labels.append(added)
+    elif option('--method') == 'DELETE' and label:
+        if state.get('label_removal_fails'):
+            sys.exit('Label removal failed')
+        removed = unquote(label.removeprefix('/'))
+        if removed not in labels:
+            sys.exit('Label does not exist')
+        labels.remove(removed)
+    else:
+        sys.exit('Unsupported label request: ' + repr(arguments))
+    path.write_text(json.dumps(state))
+    output(labels)
+elif arguments[:2] == ['api', 'graphql']:
+    variables = fields()
+    query = variables.pop('query')
+    first = re.search(r'\bfirst: (\d+)', query)
+    required = ['baseRefName: $base', 'states: $states', 'labels: $labels', 'after: $endCursor']
+    if first is None or not all(argument in query for argument in required):
+        sys.exit('Unsupported GraphQL query: ' + query)
+    if '--paginate' not in arguments:
+        sys.exit('Pull requests beyond the first page were not requested')
+    if variables['owner'] + '/' + variables['name'] != os.environ['GITHUB_REPOSITORY']:
+        sys.exit('Unknown repository')
+    size = int(first[1])
+    nodes = [pull for pull in state['pulls'] if pull['base'] == variables['base']
+             and pull['state'].upper() in variables['states']
+             and any(label in pull['labels'] for label in variables['labels'])]
+    # gh --paginate applies --jq to each page, and asks for the next page only when the response
+    # carries both pageInfo fields.
+    page_info = re.search(r'pageInfo \{([^}]*)\}', query)
+    page_fields = set(page_info[1].split()) if page_info else set()
+    pages = [nodes[start:start + size] for start in range(0, len(nodes), size)] or [[]]
+    for number, page in enumerate(pages, start=1):
+        output({'data': {'repository': {'pullRequests': {'nodes': page, 'pageInfo': {
+            'hasNextPage': number < len(pages), 'endCursor': str(number)}}}}})
+        if not {'hasNextPage', 'endCursor'} <= page_fields:
+            break
 elif arguments[:2] == ['pr', 'list']:
     if option('--repo') != os.environ['GITHUB_REPOSITORY']:
         sys.exit('Unknown repository')
+    # With --label, gh pr list reads GitHub's search index, which can lag or miss a pull request.
     pulls = [pull for pull in state['pulls'] if pull['base'] == option('--base')
-             and pull['state'] == option('--state') and option('--label') in pull['labels']]
+             and pull['state'] == option('--state') and option('--label') in pull['labels']
+             and pull['number'] not in state.get('search_omits', [])]
     output(pulls)
 elif arguments[:1] == ['api'] and arguments[1].startswith(repository + '/pulls/'):
     value = state['head']['sha']

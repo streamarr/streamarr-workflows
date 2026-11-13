@@ -5,6 +5,26 @@ import unittest
 from release_fixture import ReleaseFixture
 
 
+MERGE_COMMIT = 'c' * 40
+
+
+def merged_release_pull(**changes):
+    return {'number': 42, 'base': 'main', 'state': 'merged', 'title': 'chore(main): release 1.2.4',
+            'mergeCommit': {'oid': MERGE_COMMIT}, 'labels': ['autorelease: pending']} | changes
+
+
+def created_release(**changes):
+    return {'tag_name': 'v1.2.4', 'target_commitish': MERGE_COMMIT, 'draft': True} | changes
+
+
+def lightweight_tag(commit):
+    return {'type': 'commit', 'sha': commit}
+
+
+def labels_of(state, number):
+    return next(pull['labels'] for pull in state['pulls'] if pull['number'] == number)
+
+
 class ReleasePleaseTests(unittest.TestCase):
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
@@ -39,6 +59,186 @@ class ReleasePleaseTests(unittest.TestCase):
                 self.assertEqual(result.returncode, expected, result.stderr)
                 if expected:
                     self.assertIn('Unprocessed merged release PR #42', result.stderr)
+
+    def test_shouldBlockNextReleaseWhenSearchIndexOmitsMergedPendingPullRequest(self):
+        self.release.state(pulls=[merged_release_pull()], search_omits=[42])
+
+        result = self.release.run('release-please', 'pending')
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn('Unprocessed merged release PR #42', result.stderr)
+
+    def test_shouldMarkPullRequestTaggedWhenEarlierRunCreatedItsRelease(self):
+        for draft in [True, False]:
+            for labels in [['autorelease: pending'], ['autorelease: pending', 'autorelease: tagged']]:
+                with self.subTest(draft=draft, labels=labels):
+                    releases = [self.release.published_release(), created_release(draft=draft)]
+                    self.release.state(pulls=[merged_release_pull(labels=labels)], releases=releases,
+                                       tags={'v1.2.4': lightweight_tag(MERGE_COMMIT)})
+
+                    result = self.release.run('release-please', 'adopt')
+
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    state = self.release.state()
+                    self.assertEqual(labels_of(state, 42), ['autorelease: tagged'])
+                    self.assertEqual(state['releases'], releases)
+                    pending = self.release.run('release-please', 'pending')
+                    self.assertEqual(pending.returncode, 0, pending.stderr)
+
+    def test_shouldMarkPullRequestTaggedWhenItsReleaseResolvesToMergeCommit(self):
+        annotated = 'a' * 40
+        for case, release, tags in [
+            ('annotated tag at the merge commit', created_release(),
+             {'v1.2.4': {'type': 'tag', 'sha': annotated}}),
+            ('tag at the merge commit, release target a branch',
+             created_release(target_commitish='main'), {'v1.2.4': lightweight_tag(MERGE_COMMIT)}),
+            ('no tag yet, release target the merge commit', created_release(), {}),
+            ('no tag yet, a longer tag shares its name', created_release(),
+             {'v1.2.40': lightweight_tag('e' * 40)}),
+        ]:
+            with self.subTest(case=case):
+                self.release.state(pulls=[merged_release_pull()], releases=[release], tags=tags,
+                                   tag_objects={annotated: lightweight_tag(MERGE_COMMIT)})
+
+                result = self.release.run('release-please', 'adopt')
+
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(labels_of(self.release.state(), 42), ['autorelease: tagged'])
+
+    def test_shouldMarkPullRequestTaggedWhenSearchIndexOmitsIt(self):
+        self.release.state(pulls=[merged_release_pull()], releases=[created_release()],
+                           search_omits=[42])
+
+        result = self.release.run('release-please', 'adopt')
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(labels_of(self.release.state(), 42), ['autorelease: tagged'])
+
+    def test_shouldChangeNothingWhenReleasePullRequestIsNotMergedIntoMainAndPending(self):
+        for case, pull in [
+            ('open', merged_release_pull(state='open')),
+            ('merged into another branch', merged_release_pull(base='other')),
+            ('merged and tagged', merged_release_pull(labels=['autorelease: tagged'])),
+        ]:
+            with self.subTest(case=case):
+                before = self.release.state(pulls=[pull], releases=[created_release()],
+                                            tags={'v1.2.4': lightweight_tag(MERGE_COMMIT)})
+
+                result = self.release.run('release-please', 'adopt')
+
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(self.release.state(), before)
+
+    def test_shouldMarkOnlyPullRequestsWithCreatedReleasesWhenSeveralRemainPending(self):
+        self.release.state(
+            pulls=[merged_release_pull(number=41),
+                   merged_release_pull(number=42, title='chore(main): release 1.2.5',
+                                       mergeCommit={'oid': 'd' * 40})],
+            releases=[self.release.published_release(),
+                      created_release(tag_name='v1.2.5', target_commitish='d' * 40)])
+
+        result = self.release.run('release-please', 'adopt')
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        state = self.release.state()
+        self.assertEqual(labels_of(state, 41), ['autorelease: pending'])
+        self.assertEqual(labels_of(state, 42), ['autorelease: tagged'])
+
+    def test_shouldMarkPullRequestTaggedWhenItIsBeyondFirstPageOfPendingPullRequests(self):
+        full_first_page = [
+            merged_release_pull(number=number, title=f'chore(main): release 1.1.{number}')
+            for number in range(1, 101)]
+        self.release.state(pulls=[*full_first_page, merged_release_pull(number=101)],
+                           releases=[created_release()])
+
+        result = self.release.run('release-please', 'adopt')
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(labels_of(self.release.state(), 101), ['autorelease: tagged'])
+
+    def test_shouldChangeNothingWhenNoReleaseHasPendingPullRequestTag(self):
+        before = self.release.state(pulls=[merged_release_pull()],
+                                    releases=[self.release.published_release()])
+
+        result = self.release.run('release-please', 'adopt')
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.release.state(), before)
+
+    def test_shouldChangeNothingWhenPendingPullRequestTitleIsNotStableRelease(self):
+        releases = [created_release(), created_release(tag_name='v1.2.4-SNAPSHOT')]
+        for title in ['chore(main): release 1.2.4-SNAPSHOT', 'release 1.2.4',
+                      'Revert chore(main): release 1.2.4']:
+            with self.subTest(title=title):
+                before = self.release.state(pulls=[merged_release_pull(title=title)],
+                                            releases=releases)
+
+                result = self.release.run('release-please', 'adopt')
+
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(self.release.state(), before)
+
+    def test_shouldFailWithoutChangesWhenReleaseWithPendingTagIsAtAnotherCommit(self):
+        other, annotated = 'e' * 40, 'a' * 40
+        for case, releases, tags in [
+            ('no tag yet, release target a branch', [created_release(target_commitish='main')], {}),
+            ('no tag yet, one release target another commit',
+             [created_release(), created_release(target_commitish=other)], {}),
+            ('tag at another commit', [created_release()], {'v1.2.4': lightweight_tag(other)}),
+            ('annotated tag at another commit', [created_release()],
+             {'v1.2.4': {'type': 'tag', 'sha': annotated}}),
+        ]:
+            with self.subTest(case=case):
+                before = self.release.state(pulls=[merged_release_pull()], releases=releases,
+                                            tags=tags, tag_objects={annotated: lightweight_tag(other)})
+
+                result = self.release.run('release-please', 'adopt')
+
+                self.assertEqual(result.returncode, 1)
+                self.assertIn(MERGE_COMMIT + ', the merge commit of release PR #42', result.stderr)
+                self.assertEqual(self.release.state(), before)
+
+    def test_shouldFailWithoutChangesWhenSeveralReleasesHavePendingTag(self):
+        before = self.release.state(pulls=[merged_release_pull()],
+                                    releases=[created_release(), created_release()],
+                                    tags={'v1.2.4': lightweight_tag(MERGE_COMMIT)})
+
+        result = self.release.run('release-please', 'adopt')
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('Release PR #42 has 2 releases tagged v1.2.4', result.stderr)
+        self.assertEqual(self.release.state(), before)
+
+    def test_shouldKeepPullRequestPendingWhenGitHubReadFails(self):
+        annotated = 'a' * 40
+        failures = {'releases_unavailable': 'Releases unavailable',
+                    'tags_unavailable': 'Tags unavailable',
+                    'tag_objects_unavailable': 'Tag objects unavailable'}
+        for failure, error in failures.items():
+            with self.subTest(failure=failure):
+                self.release.state(pulls=[merged_release_pull()], releases=[created_release()],
+                                   tags={'v1.2.4': {'type': 'tag', 'sha': annotated}},
+                                   tag_objects={annotated: lightweight_tag(MERGE_COMMIT)},
+                                   **{flag: flag == failure for flag in failures})
+
+                result = self.release.run('release-please', 'adopt')
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(error, result.stderr)
+                self.assertEqual(labels_of(self.release.state(), 42), ['autorelease: pending'])
+
+    def test_shouldFailWithPullRequestStillPendingWhenLabelSwapFails(self):
+        for failing in ['addition', 'removal']:
+            with self.subTest(failing=failing):
+                self.release.state(pulls=[merged_release_pull()], releases=[created_release()],
+                                   label_addition_fails=failing == 'addition',
+                                   label_removal_fails=failing == 'removal')
+
+                result = self.release.run('release-please', 'adopt')
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('Label ' + failing + ' failed', result.stderr)
+                self.assertIn('autorelease: pending', labels_of(self.release.state(), 42))
 
     def test_shouldQueueAutoMergeOnlyWhenReleasePullRequestIsSnapshot(self):
         for label, queued in [('pending', False), ('snapshot', True)]:
@@ -78,7 +278,7 @@ class ReleasePleaseTests(unittest.TestCase):
         self.release.environment['RELEASE_PR'] = json.dumps({
             'number': 43, 'title': 'chore(main): release 1.2.4-SNAPSHOT',
             'labels': ['autorelease: snapshot']})
-        for step in ['auto-merge', 'pending', 'snapshot']:
+        for step in ['auto-merge', 'adopt', 'pending', 'snapshot']:
             with self.subTest(step=step):
                 result = self.release.run('release-please', step)
 

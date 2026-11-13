@@ -59,15 +59,15 @@ class ReleaseValidationTests(unittest.TestCase):
         self.assertEqual(self.release.outputs(), '')
 
     def test_shouldWithholdOutputsWhenGitHubCannotConfirmPublishedRelease(self):
+        published = self.release.published_release()
         for state in [
-            {'releases': {'v1.2.3': {'draft': True}}},
-            {'releases': {'v1.2.3': {'draft': None}}},
-            {'releases': {}},
+            {'releases': [published | {'draft': True}]},
+            {'releases': [published | {'draft': None}]},
+            {'releases': []},
             {'unavailable': True},
         ]:
             with self.subTest(state=state):
-                self.release.state(**({'unavailable': False,
-                                       'releases': {'v1.2.3': {'draft': False}}} | state))
+                self.release.state(**({'unavailable': False, 'releases': [published]} | state))
 
                 result = self.release.run('validate-release')
 

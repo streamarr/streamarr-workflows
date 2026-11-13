@@ -27,7 +27,8 @@ class ReleaseFixture:
         self.git('tag', 'v1.2.3')
         self.git('update-ref', 'refs/remotes/origin/main', 'HEAD')
         self.revision = self.git('rev-parse', 'HEAD')
-        self.state(allow_auto_merge=True, pulls=[], releases={'v1.2.3': {'draft': False}},
+        self.state(allow_auto_merge=True, pulls=[], releases=[self.published_release()],
+                   tags={'v1.2.3': {'type': 'commit', 'sha': self.revision}}, tag_objects={},
                    head={'sha': self.revision})
         (self.root / 'mvnw').write_text(
             '#!/bin/sh\nset -eu\ncase "$*" in *-Dexpression=project.version*) '
@@ -40,6 +41,9 @@ class ReleaseFixture:
         state.update(changes)
         self.state_path.write_text(json.dumps(state))
         return state
+
+    def published_release(self):
+        return {'tag_name': 'v1.2.3', 'target_commitish': self.revision, 'draft': False}
 
     def version(self, value):
         (self.root / 'maven-version').write_text(value)
