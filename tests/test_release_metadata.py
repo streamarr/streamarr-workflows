@@ -34,7 +34,7 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertEqual(publish['skip-github-pull-request'], 'true')
         self.assertEqual(maintain['skip-github-release'], 'true')
 
-    def test_shouldAdoptCreatedReleasesBeforePublishingMergedReleases(self):
+    def test_shouldAdoptCreatedReleasesBeforePublishingWhenMaintainingReleases(self):
         steps = release_steps()
         names = list(steps)
         adopt = steps['Adopt releases that an earlier run created']
