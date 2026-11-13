@@ -33,6 +33,16 @@ elif arguments[:1] == ['api'] and arguments[1] == repository + '/releases?per_pa
     if '--paginate' not in arguments:
         sys.exit('Releases beyond the first page were not requested')
     output(state['releases'])
+elif arguments[:1] == ['api'] and arguments[1].startswith(repository + '/git/matching-refs/tags/'):
+    if state.get('tags_unavailable'):
+        sys.exit('Tags unavailable')
+    prefix = arguments[1].removeprefix(repository + '/git/matching-refs/tags/')
+    output([{'ref': 'refs/tags/' + name, 'object': target}
+            for name, target in state['tags'].items() if name.startswith(prefix)])
+elif arguments[:1] == ['api'] and arguments[1].startswith(repository + '/git/tags/'):
+    if state.get('tags_unavailable'):
+        sys.exit('Tags unavailable')
+    output({'object': state['tag_objects'][arguments[1].rsplit('/', 1)[1]]})
 elif arguments[:1] == ['api'] and arguments[1].startswith(repository + '/issues/'):
     number, _, label = arguments[1].removeprefix(repository + '/issues/').partition('/labels')
     labels = next(pull['labels'] for pull in state['pulls'] if pull['number'] == int(number))

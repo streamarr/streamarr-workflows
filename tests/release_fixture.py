@@ -28,6 +28,7 @@ class ReleaseFixture:
         self.git('update-ref', 'refs/remotes/origin/main', 'HEAD')
         self.revision = self.git('rev-parse', 'HEAD')
         self.state(allow_auto_merge=True, pulls=[], releases=[self.published_release()],
+                   tags={'v1.2.3': {'type': 'commit', 'sha': self.revision}}, tag_objects={},
                    head={'sha': self.revision})
         (self.root / 'mvnw').write_text(
             '#!/bin/sh\nset -eu\ncase "$*" in *-Dexpression=project.version*) '

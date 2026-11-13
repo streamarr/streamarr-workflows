@@ -24,10 +24,11 @@ Release Please creates a merged PR's release, then comments on the PR, then swap
 `autorelease: pending` label for `autorelease: tagged`. If the comment or the label swap fails,
 the PR stays pending. Before releases are created, `release-please.yml` therefore looks at each
 merged `chore(main): release X.Y.Z` PR that is still pending. When exactly one release, draft or
-published, has the tag `vX.Y.Z` and targets the PR's merge commit, the workflow swaps the labels
-and Release Please skips the PR. A rerun therefore leaves one release, not a second draft. When
-no release has the tag, nothing changes. A release with the tag at another commit, or more than
-one release with the tag, fails the run.
+published, has the tag `vX.Y.Z` at the PR's merge commit, the workflow swaps the labels and
+Release Please skips the PR. A rerun therefore leaves one release, not a second draft. The tag's
+commit counts, because GitHub ignores a release's target once its tag exists. A release whose tag
+does not exist yet counts by its target. When no release has the tag, nothing changes. A release
+with the tag at another commit, or more than one release with the tag, fails the run.
 
 Pin each cross-repository workflow call to its reviewed full commit SHA. Once a version is
 released, add its version comment so Renovate can propose pin updates. Adopt those updates
