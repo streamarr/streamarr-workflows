@@ -24,9 +24,10 @@ if arguments[:2] == ['api', repository]:
     output(state)
 elif arguments[:1] == ['api'] and arguments[1].startswith(repository + '/releases/tags/'):
     tag = arguments[1].rsplit('/', 1)[1]
-    if tag not in state['releases']:
+    release = next((release for release in state['releases'] if release['tag_name'] == tag), None)
+    if release is None:
         sys.exit('Release not found')
-    output(state['releases'][tag])
+    output(release)
 elif arguments[:2] == ['pr', 'list']:
     if option('--repo') != os.environ['GITHUB_REPOSITORY']:
         sys.exit('Unknown repository')
