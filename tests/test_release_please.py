@@ -209,15 +209,23 @@ class ReleasePleaseTests(unittest.TestCase):
         self.assertIn('Release PR #42 has 2 releases tagged v1.2.4', result.stderr)
         self.assertEqual(self.release.state(), before)
 
-    def test_shouldKeepPullRequestPendingWhenTagCannotBeRead(self):
-        self.release.state(pulls=[merged_release_pull()], releases=[created_release()],
-                           tags_unavailable=True)
+    def test_shouldKeepPullRequestPendingWhenGitHubReadFails(self):
+        annotated = 'a' * 40
+        failures = {'releases_unavailable': 'Releases unavailable',
+                    'tags_unavailable': 'Tags unavailable',
+                    'tag_objects_unavailable': 'Tag objects unavailable'}
+        for failure, error in failures.items():
+            with self.subTest(failure=failure):
+                self.release.state(pulls=[merged_release_pull()], releases=[created_release()],
+                                   tags={'v1.2.4': {'type': 'tag', 'sha': annotated}},
+                                   tag_objects={annotated: lightweight_tag(MERGE_COMMIT)},
+                                   **{flag: flag == failure for flag in failures})
 
-        result = self.release.run('release-please', 'adopt')
+                result = self.release.run('release-please', 'adopt')
 
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn('Tags unavailable', result.stderr)
-        self.assertEqual(labels_of(self.release.state(), 42), ['autorelease: pending'])
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(error, result.stderr)
+                self.assertEqual(labels_of(self.release.state(), 42), ['autorelease: pending'])
 
     def test_shouldFailWithPullRequestStillPendingWhenLabelSwapFails(self):
         for failing in ['addition', 'removal']:
@@ -229,6 +237,7 @@ class ReleasePleaseTests(unittest.TestCase):
                 result = self.release.run('release-please', 'adopt')
 
                 self.assertNotEqual(result.returncode, 0)
+                self.assertIn('Label ' + failing + ' failed', result.stderr)
                 self.assertIn('autorelease: pending', labels_of(self.release.state(), 42))
 
     def test_shouldQueueAutoMergeOnlyWhenReleasePullRequestIsSnapshot(self):
