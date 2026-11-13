@@ -144,6 +144,18 @@ class ReleasePleaseTests(unittest.TestCase):
         self.assertEqual(labels_of(state, 41), ['autorelease: pending'])
         self.assertEqual(labels_of(state, 42), ['autorelease: tagged'])
 
+    def test_shouldMarkPullRequestTaggedWhenItIsBeyondFirstPageOfPendingPullRequests(self):
+        full_first_page = [
+            merged_release_pull(number=number, title=f'chore(main): release 1.1.{number}')
+            for number in range(1, 101)]
+        self.release.state(pulls=[*full_first_page, merged_release_pull(number=101)],
+                           releases=[created_release()])
+
+        result = self.release.run('release-please', 'adopt')
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(labels_of(self.release.state(), 101), ['autorelease: tagged'])
+
     def test_shouldChangeNothingWhenNoReleaseHasPendingPullRequestTag(self):
         before = self.release.state(pulls=[merged_release_pull()],
                                     releases=[self.release.published_release()])

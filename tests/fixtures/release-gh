@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import re
 import sys
 import subprocess
 from urllib.parse import unquote
@@ -81,18 +82,28 @@ elif arguments[:1] == ['api'] and arguments[1].startswith(repository + '/issues/
 elif arguments[:2] == ['api', 'graphql']:
     variables = fields()
     query = variables.pop('query')
-    if not all(argument in query for argument in
-               ['baseRefName: $base', 'states: $states', 'labels: $labels', 'after: $endCursor']):
+    first = re.search(r'\bfirst: (\d+)', query)
+    required = ['baseRefName: $base', 'states: $states', 'labels: $labels', 'after: $endCursor']
+    if first is None or not all(argument in query for argument in required):
         sys.exit('Unsupported GraphQL query: ' + query)
     if '--paginate' not in arguments:
         sys.exit('Pull requests beyond the first page were not requested')
     if variables['owner'] + '/' + variables['name'] != os.environ['GITHUB_REPOSITORY']:
         sys.exit('Unknown repository')
+    size = int(first[1])
     nodes = [pull for pull in state['pulls'] if pull['base'] == variables['base']
              and pull['state'].upper() in variables['states']
              and any(label in pull['labels'] for label in variables['labels'])]
-    output({'data': {'repository': {'pullRequests': {
-        'nodes': nodes, 'pageInfo': {'hasNextPage': False, 'endCursor': None}}}}})
+    # gh --paginate applies --jq to each page, and asks for the next page only when the response
+    # carries both pageInfo fields.
+    page_info = re.search(r'pageInfo \{([^}]*)\}', query)
+    page_fields = set(page_info[1].split()) if page_info else set()
+    pages = [nodes[start:start + size] for start in range(0, len(nodes), size)] or [[]]
+    for number, page in enumerate(pages, start=1):
+        output({'data': {'repository': {'pullRequests': {'nodes': page, 'pageInfo': {
+            'hasNextPage': number < len(pages), 'endCursor': str(number)}}}}})
+        if not {'hasNextPage', 'endCursor'} <= page_fields:
+            break
 elif arguments[:2] == ['pr', 'list']:
     if option('--repo') != os.environ['GITHUB_REPOSITORY']:
         sys.exit('Unknown repository')
