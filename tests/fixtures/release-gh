@@ -15,6 +15,19 @@ def option(name):
     return arguments[arguments.index(name) + 1] if name in arguments else None
 
 
+def fields():
+    values = {}
+    for index, argument in enumerate(arguments):
+        if argument != '-f':
+            continue
+        name, _, value = arguments[index + 1].partition('=')
+        if name.endswith('[]'):
+            values.setdefault(name.removesuffix('[]'), []).append(value)
+        else:
+            values[name] = value
+    return values
+
+
 def output(value):
     query = option('--jq') or '.'
     print(subprocess.check_output(['jq', '-r', query], input=json.dumps(value), text=True).strip())
@@ -65,11 +78,28 @@ elif arguments[:1] == ['api'] and arguments[1].startswith(repository + '/issues/
         sys.exit('Unsupported label request: ' + repr(arguments))
     path.write_text(json.dumps(state))
     output(labels)
+elif arguments[:2] == ['api', 'graphql']:
+    variables = fields()
+    query = variables.pop('query')
+    if not all(argument in query for argument in
+               ['baseRefName: $base', 'states: $states', 'labels: $labels', 'after: $endCursor']):
+        sys.exit('Unsupported GraphQL query: ' + query)
+    if '--paginate' not in arguments:
+        sys.exit('Pull requests beyond the first page were not requested')
+    if variables['owner'] + '/' + variables['name'] != os.environ['GITHUB_REPOSITORY']:
+        sys.exit('Unknown repository')
+    nodes = [pull for pull in state['pulls'] if pull['base'] == variables['base']
+             and pull['state'].upper() in variables['states']
+             and any(label in pull['labels'] for label in variables['labels'])]
+    output({'data': {'repository': {'pullRequests': {
+        'nodes': nodes, 'pageInfo': {'hasNextPage': False, 'endCursor': None}}}}})
 elif arguments[:2] == ['pr', 'list']:
     if option('--repo') != os.environ['GITHUB_REPOSITORY']:
         sys.exit('Unknown repository')
+    # With --label, gh pr list reads GitHub's search index, which can lag or miss a pull request.
     pulls = [pull for pull in state['pulls'] if pull['base'] == option('--base')
-             and pull['state'] == option('--state') and option('--label') in pull['labels']]
+             and pull['state'] == option('--state') and option('--label') in pull['labels']
+             and pull['number'] not in state.get('search_omits', [])]
     output(pulls)
 elif arguments[:1] == ['api'] and arguments[1].startswith(repository + '/pulls/'):
     value = state['head']['sha']

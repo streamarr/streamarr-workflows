@@ -97,6 +97,30 @@ class ReleasePleaseTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(labels_of(self.release.state(), 42), ['autorelease: tagged'])
 
+    def test_shouldMarkPullRequestTaggedWhenSearchIndexOmitsIt(self):
+        self.release.state(pulls=[merged_release_pull()], releases=[created_release()],
+                           search_omits=[42])
+
+        result = self.release.run('release-please', 'adopt')
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(labels_of(self.release.state(), 42), ['autorelease: tagged'])
+
+    def test_shouldChangeNothingWhenReleasePullRequestIsNotMergedIntoMainAndPending(self):
+        for case, pull in [
+            ('open', merged_release_pull(state='open')),
+            ('merged into another branch', merged_release_pull(base='other')),
+            ('merged and tagged', merged_release_pull(labels=['autorelease: tagged'])),
+        ]:
+            with self.subTest(case=case):
+                before = self.release.state(pulls=[pull], releases=[created_release()],
+                                            tags={'v1.2.4': lightweight_tag(MERGE_COMMIT)})
+
+                result = self.release.run('release-please', 'adopt')
+
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(self.release.state(), before)
+
     def test_shouldMarkOnlyPullRequestsWithCreatedReleasesWhenSeveralRemainPending(self):
         self.release.state(
             pulls=[merged_release_pull(number=41),

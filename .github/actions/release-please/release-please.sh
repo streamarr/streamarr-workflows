@@ -22,6 +22,24 @@ find_tag_commit() {
   tag_commit="${sha}"
 }
 
+# Lists the merged release PRs that are still pending. gh pr list --label reads the search index,
+# which can lag or miss a PR that Release Please then finds, so this reads the PRs themselves.
+merged_pending_release_pulls() {
+  gh api graphql --paginate -f owner="${GITHUB_REPOSITORY%%/*}" -f name="${GITHUB_REPOSITORY#*/}" \
+    -f base=main -f 'states[]=MERGED' -f 'labels[]=autorelease: pending' -f query='
+      query($owner: String!, $name: String!, $base: String!, $states: [PullRequestState!],
+            $labels: [String!], $endCursor: String) {
+        repository(owner: $owner, name: $name) {
+          pullRequests(baseRefName: $base, states: $states, labels: $labels, first: 100,
+                       after: $endCursor) {
+            nodes { number title mergeCommit { oid } }
+            pageInfo { hasNextPage endCursor }
+          }
+        }
+      }' \
+    --jq '.data.repository.pullRequests.nodes[] | [.number, .title, .mergeCommit.oid] | @tsv'
+}
+
 # Release Please creates a release before it comments on the PR and swaps its labels. When a
 # later call fails, the PR stays pending, and GitHub accepts a second draft for the same tag.
 adopt_created_release() {
@@ -71,9 +89,7 @@ case "${1:?Supply the release preparation step}" in
     esac
     ;;
   adopt)
-    pending="$(gh pr list --repo "${GITHUB_REPOSITORY}" --base main --state merged \
-      --label 'autorelease: pending' --limit 100 --json number,title,mergeCommit \
-      --jq '.[] | [.number, .title, .mergeCommit.oid] | @tsv')"
+    pending="$(merged_pending_release_pulls)"
     if [[ -z "${pending}" ]]; then
       exit 0
     fi
