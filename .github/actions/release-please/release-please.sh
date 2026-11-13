@@ -22,8 +22,9 @@ find_tag_commit() {
   tag_commit="${sha}"
 }
 
-# Lists the merged release PRs that are still pending. gh pr list --label reads the search index,
-# which can lag or miss a PR that Release Please then finds, so this reads the PRs themselves.
+# Lists the merged PRs on main that are still pending, one "number<TAB>title<TAB>merge commit" line
+# each. gh pr list --label reads the search index, which can lag or miss a PR that Release Please
+# then finds, so this reads the PRs themselves.
 merged_pending_release_pulls() {
   gh api graphql --paginate -f owner="${GITHUB_REPOSITORY%%/*}" -f name="${GITHUB_REPOSITORY#*/}" \
     -f base=main -f 'states[]=MERGED' -f 'labels[]=autorelease: pending' -f query='
@@ -100,10 +101,10 @@ case "${1:?Supply the release preparation step}" in
     done 3<<<"${pending}"
     ;;
   pending)
-    pending="$(gh pr list --repo "${GITHUB_REPOSITORY}" --base main --state merged \
-      --label 'autorelease: pending' --limit 1 --json number --jq '.[0].number // empty')"
+    pending="$(merged_pending_release_pulls)"
     if [[ -n "${pending}" ]]; then
-      echo "::error::Unprocessed merged release PR #${pending}: restore its release title and body, then rerun Release Please" >&2
+      read -r number _ <<<"${pending}"
+      echo "::error::Unprocessed merged release PR #${number}: restore its release title and body, then rerun Release Please" >&2
       exit 1
     fi
     ;;

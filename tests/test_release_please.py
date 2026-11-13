@@ -60,6 +60,14 @@ class ReleasePleaseTests(unittest.TestCase):
                 if expected:
                     self.assertIn('Unprocessed merged release PR #42', result.stderr)
 
+    def test_shouldBlockNextReleaseWhenSearchIndexOmitsMergedPendingPullRequest(self):
+        self.release.state(pulls=[merged_release_pull()], search_omits=[42])
+
+        result = self.release.run('release-please', 'pending')
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn('Unprocessed merged release PR #42', result.stderr)
+
     def test_shouldMarkPullRequestTaggedWhenEarlierRunCreatedItsRelease(self):
         for draft in [True, False]:
             for labels in [['autorelease: pending'], ['autorelease: pending', 'autorelease: tagged']]:
